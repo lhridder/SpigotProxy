@@ -9,6 +9,7 @@ import io.netty.channel.socket.SocketChannel;
 import io.netty.handler.codec.haproxy.HAProxyMessage;
 import io.netty.handler.codec.haproxy.HAProxyMessageDecoder;
 import nl.thijsalders.spigotproxy.Mapping;
+import nl.thijsalders.spigotproxy.SpigotProxy;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -51,6 +52,11 @@ public class NettyChannelInitializer extends ChannelInitializer<SocketChannel> {
 
     @Override
     protected void initChannel(SocketChannel channel) throws Exception {
+        if(!SpigotProxy.trusted.contains(channel.remoteAddress().getAddress().toString())) {
+            channel.close();
+            return;
+        }
+
         this.oldChildHandlerMethod.invoke(this.oldChildHandler, channel);
 
         channel.pipeline().addAfter("timeout", "haproxy-decoder", new HAProxyMessageDecoder());

@@ -6,16 +6,25 @@ import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelPipeline;
 import io.netty.channel.socket.SocketChannel;
 import nl.thijsalders.spigotproxy.netty.NettyChannelInitializer;
+import org.apache.hc.client5.http.fluent.Request;
+import org.apache.hc.core5.util.Timeout;
 import org.bukkit.Bukkit;
+import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.scheduler.BukkitRunnable;
 
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.lang.reflect.Method;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.logging.Level;
 
 public class SpigotProxy extends JavaPlugin {
+
+    public static List<String> trusted = new ArrayList<>();
+    public static String url = "";
+
     public void onEnable() {
         Mapping mapping = null;
         try {
@@ -35,6 +44,21 @@ public class SpigotProxy extends JavaPlugin {
             getLogger().info("Detected server version " + version);
         }
 
+        this.saveDefaultConfig();
+        FileConfiguration config = this.getConfig();
+        url = config.getString("url");
+
+        try {
+            getLogger().info("Fetching trusted proxy IPs...");
+            fetch();
+            getLogger().info("Fetching trusted proxy IPs finished!");
+        } catch (Exception e) {
+            getLogger().info("Fetching trusted proxy IPs failed!");
+            e.printStackTrace();
+            super.getServer().shutdown();
+            return;
+        }
+
         try {
             getLogger().info("Injecting NettyHandler...");
             inject(channelFieldName, version, mapping);
@@ -42,6 +66,26 @@ public class SpigotProxy extends JavaPlugin {
         } catch (Exception e) {
             getLogger().log(Level.SEVERE, "Injection netty handler failed!", e);
             Bukkit.getPluginManager().disablePlugin(this);
+        }
+
+        try {
+            getLogger().info("Scheduling trusted proxy IPs fetch...");
+            (new BukkitRunnable() {
+                @Override
+                public void run() {
+                    try {
+                        fetch();
+                    } catch(Exception e) {
+                        getLogger().info("Fetching trusted proxy IPs failed!");
+                        e.printStackTrace();
+                    }
+                }
+            }).runTaskTimer(this, 20*60*60, 20*60*60);
+            getLogger().info("Scheduling trusted proxy IPs fetch finished!");
+        } catch (Exception e) {
+            getLogger().info("Scheduling trusted proxy IPs fetch failed!");
+            e.printStackTrace();
+            super.getServer().shutdown();
         }
     }
 
@@ -105,4 +149,17 @@ public class SpigotProxy extends JavaPlugin {
         }
         return null;
     }
+
+    private void fetch() throws Exception {
+        getLogger().info("Fetching ips:");
+        String res = Request.get(url)
+                .connectTimeout(Timeout.ofSeconds(1))
+                .responseTimeout(Timeout.ofSeconds(5))
+                .execute().returnContent().asString();
+        String[] ips = res.split("\n");
+        List<String> newTrusted = new ArrayList<>();
+        for(int i = 0; i < ips.length; i++) if(!ips[i].equals("")) newTrusted.add("/"+ips[i]);
+        trusted = newTrusted;
+    }
+
 }
